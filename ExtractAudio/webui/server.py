@@ -10,6 +10,7 @@ import runpy
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,6 +28,11 @@ HOST = "0.0.0.0"
 PORT = 8765
 MAX_LOG_LENGTH = 250_000
 
+# Zamknięcie okna przeglądarki kończy aplikację. Aplikacja żyje dopóki karta
+# wysyła sygnały (heartbeat); po ich ustaniu serwer sam się wyłącza.
+HEARTBEAT_TIMEOUT = 75.0   # brak sygnału przez tyle sekund -> zamykanie
+STARTUP_GRACE = 180.0      # brak połączenia z przeglądarką przez tyle sekund -> zamykanie
+
 state_lock = threading.Lock()
 state = {
     "status": "idle",
@@ -34,6 +40,48 @@ state = {
     "return_code": None,
     "process": None,
 }
+
+heartbeat_lock = threading.Lock()
+last_heartbeat = {"time": None}
+server_holder = {"server": None}
+
+
+def shutdown_app():
+    """Kończy pracę serwera i ewentualnie uruchomionego zadania."""
+    with state_lock:
+        process = state["process"]
+    if process and process.poll() is None:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+    server = server_holder.get("server")
+    if server is not None:
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+
+def delayed_shutdown(delay=0.2):
+    time.sleep(delay)
+    shutdown_app()
+
+
+def heartbeat_watchdog():
+    """Zamyka aplikację, gdy karta przeglądarki przestanie odpowiadać."""
+    start = time.monotonic()
+    while True:
+        time.sleep(2.0)
+        with heartbeat_lock:
+            last = last_heartbeat["time"]
+        if last is None:
+            if time.monotonic() - start > STARTUP_GRACE:
+                print("\nBrak połączenia z przeglądarką - zamykanie aplikacji.")
+                shutdown_app()
+                return
+            continue
+        if time.monotonic() - last > HEARTBEAT_TIMEOUT:
+            print("\nPrzeglądarka została zamknięta - zamykanie aplikacji.")
+            shutdown_app()
+            return
 
 
 def append_log(text):
@@ -107,6 +155,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/heartbeat":
+            with heartbeat_lock:
+                last_heartbeat["time"] = time.monotonic()
+            self.send_json({"status": "alive"})
+            return
         if path == "/api/status":
             with state_lock:
                 payload = {
@@ -148,6 +201,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 self.start_run(payload)
             elif route == "/api/stop":
                 self.stop_run()
+            elif route == "/api/heartbeat":
+                with heartbeat_lock:
+                    last_heartbeat["time"] = time.monotonic()
+                self.send_json({"status": "alive"})
+            elif route == "/api/close":
+                self.send_json({"status": "closing"})
+                threading.Thread(target=delayed_shutdown, daemon=True).start()
             else:
                 self.send_json({"error": "Nieznany endpoint."}, 404)
         except ValueError as error:
@@ -218,8 +278,11 @@ def run_server():
         raise SystemExit("Nie znaleziono skryptu: {}".format(SCRIPT_PATH))
     url = "http://127.0.0.1:{}".format(PORT)
     print("Audio Extract Web UI: {}".format(url))
-    print("Zatrzymaj serwer klawiszami Ctrl+C.")
+    print("Zamknięcie okna przeglądarki zakończy aplikację (Ctrl+C również).")
     server = ThreadingHTTPServer((HOST, PORT), WebUIHandler)
+    server.daemon_threads = True
+    server_holder["server"] = server
+    threading.Thread(target=heartbeat_watchdog, daemon=True).start()
     try:
         if getattr(sys, "frozen", False):
             webbrowser.open(url)
@@ -228,6 +291,9 @@ def run_server():
         print("\nSerwer zatrzymany.")
     finally:
         server.server_close()
+        if getattr(sys, "frozen", False):
+            # Upewnij się, że proces (w tym okno/konsola) faktycznie się kończy.
+            os._exit(0)
 
 
 if __name__ == "__main__":

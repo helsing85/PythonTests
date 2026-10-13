@@ -6,6 +6,8 @@ const statusText = statusBadge.querySelector('span');
 const activityMessage = document.querySelector('#activity-message');
 const logElement = document.querySelector('#log');
 
+const HEARTBEAT_INTERVAL = 4000;
+
 const statusLabels = {
   idle: 'GOTOWY',
   running: 'W TOKU',
@@ -16,6 +18,29 @@ const statusLabels = {
 
 let polling = false;
 let lastStatus = 'idle';
+
+function startHeartbeat() {
+  const ping = () => {
+    fetch('/api/heartbeat', { cache: 'no-store' }).catch(() => {});
+  };
+  ping();
+  window.setInterval(ping, HEARTBEAT_INTERVAL);
+}
+
+function notifyServerClosing() {
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/close');
+      return;
+    }
+  } catch (error) {
+    // ignorujemy i próbujemy fallbacku
+  }
+  fetch('/api/close', { method: 'POST', keepalive: true }).catch(() => {});
+}
+
+window.addEventListener('pagehide', notifyServerClosing);
+window.addEventListener('beforeunload', notifyServerClosing);
 
 async function loadPlatformConfig() {
   try {
@@ -117,4 +142,5 @@ stopButton.addEventListener('click', async () => {
 });
 
 beginPolling();
+startHeartbeat();
 loadPlatformConfig();
