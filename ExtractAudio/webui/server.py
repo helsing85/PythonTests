@@ -6,17 +6,23 @@ import json
 import mimetypes
 import os
 import platform
+import runpy
 import subprocess
 import sys
 import threading
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 
-APP_DIR = Path(__file__).resolve().parent
-STATIC_DIR = APP_DIR / "static"
-SCRIPT_PATH = APP_DIR.parent / "wyciagnij_polskie_audio.py"
+if getattr(sys, "frozen", False):
+    RESOURCE_DIR = Path(sys._MEIPASS)
+else:
+    RESOURCE_DIR = Path(__file__).resolve().parents[2]
+
+STATIC_DIR = RESOURCE_DIR / "ExtractAudio" / "webui" / "static"
+SCRIPT_PATH = RESOURCE_DIR / "ExtractAudio" / "wyciagnij_polskie_audio.py"
 HOST = "0.0.0.0"
 PORT = 8765
 MAX_LOG_LENGTH = 250_000
@@ -33,6 +39,12 @@ state = {
 def append_log(text):
     with state_lock:
         state["logs"] = (state["logs"] + text)[-MAX_LOG_LENGTH:]
+
+
+def extractor_command(arguments):
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--run-extractor"] + arguments
+    return [sys.executable, "-u", str(SCRIPT_PATH)] + arguments
 
 
 def run_script(command):
@@ -157,12 +169,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.send_json({"error": "Folder docelowy wskazuje plik, a nie folder."}, 400)
             return
 
-        command = [sys.executable, "-u", str(SCRIPT_PATH), str(folder.resolve())]
+        arguments = [str(folder.resolve())]
         if output:
-            command.extend(["--output", str(output.resolve())])
+            arguments.extend(["--output", str(output.resolve())])
         if payload.get("overwrite") is True:
-            command.append("--overwrite")
-        command.extend(["--ffmpeg", ffmpeg])
+            arguments.append("--overwrite")
+        arguments.extend(["--ffmpeg", ffmpeg])
+        command = extractor_command(arguments)
 
         with state_lock:
             if state["status"] == "running":
@@ -188,12 +201,32 @@ class WebUIHandler(BaseHTTPRequestHandler):
         pass
 
 
-if __name__ == "__main__":
+def run_bundled_extractor():
     if not SCRIPT_PATH.is_file():
         raise SystemExit("Nie znaleziono skryptu: {}".format(SCRIPT_PATH))
-    print("Audio Extract Web UI: http://{}:{}".format(HOST, PORT))
+    sys.argv = [str(SCRIPT_PATH)] + sys.argv[2:]
+    runpy.run_path(str(SCRIPT_PATH), run_name="__main__")
+
+
+def run_server():
+    if not SCRIPT_PATH.is_file():
+        raise SystemExit("Nie znaleziono skryptu: {}".format(SCRIPT_PATH))
+    url = "http://127.0.0.1:{}".format(PORT)
+    print("Audio Extract Web UI: {}".format(url))
     print("Zatrzymaj serwer klawiszami Ctrl+C.")
+    server = ThreadingHTTPServer((HOST, PORT), WebUIHandler)
     try:
-        ThreadingHTTPServer((HOST, PORT), WebUIHandler).serve_forever()
+        if getattr(sys, "frozen", False):
+            webbrowser.open(url)
+        server.serve_forever()
     except KeyboardInterrupt:
         print("\nSerwer zatrzymany.")
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--run-extractor":
+        run_bundled_extractor()
+    else:
+        run_server()
