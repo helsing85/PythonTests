@@ -17,7 +17,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 
-if getattr(sys, "frozen", False):
+IS_FROZEN = getattr(sys, "frozen", False)
+
+if IS_FROZEN:
     RESOURCE_DIR = Path(sys._MEIPASS)
 else:
     RESOURCE_DIR = Path(__file__).resolve().parents[2]
@@ -90,7 +92,7 @@ def append_log(text):
 
 
 def extractor_command(arguments):
-    if getattr(sys, "frozen", False):
+    if IS_FROZEN:
         return [sys.executable, "--run-extractor"] + arguments
     return [sys.executable, "-u", str(SCRIPT_PATH)] + arguments
 
@@ -206,8 +208,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     last_heartbeat["time"] = time.monotonic()
                 self.send_json({"status": "alive"})
             elif route == "/api/close":
-                self.send_json({"status": "closing"})
-                threading.Thread(target=delayed_shutdown, daemon=True).start()
+                if IS_FROZEN:
+                    self.send_json({"status": "closing"})
+                    threading.Thread(target=delayed_shutdown, daemon=True).start()
+                else:
+                    # Tryb deweloperski: zamknięcie karty nie kończy aplikacji.
+                    self.send_json({"status": "ignored"})
             else:
                 self.send_json({"error": "Nieznany endpoint."}, 404)
         except ValueError as error:
@@ -278,20 +284,24 @@ def run_server():
         raise SystemExit("Nie znaleziono skryptu: {}".format(SCRIPT_PATH))
     url = "http://127.0.0.1:{}".format(PORT)
     print("Audio Extract Web UI: {}".format(url))
-    print("Zamknięcie okna przeglądarki zakończy aplikację (Ctrl+C również).")
+    if IS_FROZEN:
+        print("Zamknięcie okna przeglądarki zakończy aplikację (Ctrl+C również).")
+    else:
+        print("Tryb deweloperski: zamknięcie przeglądarki nie kończy aplikacji. Zatrzymaj przez Ctrl+C.")
     server = ThreadingHTTPServer((HOST, PORT), WebUIHandler)
     server.daemon_threads = True
     server_holder["server"] = server
-    threading.Thread(target=heartbeat_watchdog, daemon=True).start()
+    if IS_FROZEN:
+        threading.Thread(target=heartbeat_watchdog, daemon=True).start()
     try:
-        if getattr(sys, "frozen", False):
+        if IS_FROZEN:
             webbrowser.open(url)
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nSerwer zatrzymany.")
     finally:
         server.server_close()
-        if getattr(sys, "frozen", False):
+        if IS_FROZEN:
             # Upewnij się, że proces (w tym okno/konsola) faktycznie się kończy.
             os._exit(0)
 
