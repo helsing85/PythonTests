@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#edf1ed">
+  <title>Audio Extract | Panel</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="wordmark" href="/" aria-label="Audio Extract, strona główna">
+        <span class="mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span>AUDIO<span class="wordmark-light"> / EXTRACT</span></span>
+      </a>
+      <div class="local-indicator"><span class="pulse"></span> LOKALNA SESJA</div>
+    </header>
+
+    <section class="intro" aria-labelledby="page-title">
+      <div class="intro-copy">
+        <p class="eyebrow">NARZĘDZIE / ŚCIEŻKI DŹWIĘKOWE</p>
+        <h1 id="page-title">Wyciągnij<br><em>polskie audio.</em></h1>
+        <p class="lede">Wskaż bibliotekę wideo i ustaw sposób zapisu. Oryginalne ścieżki zostaną skopiowane bez ponownego kodowania.</p>
+      </div>
+      <div class="intro-art" aria-hidden="true">
+        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+        <div class="disc"><div class="disc-center"></div></div>
+        <span class="art-label">PL<br>TRACKS</span>
+        <span class="art-index">01 — 04</span>
+      </div>
+    </section>
+
+    <div class="workspace">
+      <section class="settings" aria-labelledby="settings-title">
+        <div class="section-heading">
+          <span class="section-number">01</span>
+          <div><p class="eyebrow">KONFIGURACJA</p><h2 id="settings-title">Parametry zadania</h2></div>
+        </div>
+
+        <form id="job-form">
+          <label class="field" for="folder">
+            <span class="field-label">Folder z filmami <b>WYMAGANE</b></span>
+            <span class="input-wrap"><span class="field-icon" aria-hidden="true">▤</span><input id="folder" name="folder" type="text" placeholder="Wybierz folder z filmami" autocomplete="off" required></span>
+            <span class="field-hint">Przeszukiwanie obejmie również podfoldery.</span>
+          </label>
+
+          <label class="field" for="output">
+            <span class="field-label">Folder docelowy <span>OPCJONALNE</span></span>
+            <span class="input-wrap"><span class="field-icon" aria-hidden="true">⇥</span><input id="output" name="output" type="text" placeholder="Domyślnie: obok plików wideo" autocomplete="off"></span>
+            <span class="field-hint">Struktura podfolderów zostanie zachowana.</span>
+          </label>
+
+          <label class="field" for="ffmpeg">
+            <span class="field-label">Ścieżka do FFmpeg <span>OPCJONALNE</span></span>
+            <span class="input-wrap"><span class="field-icon field-icon-small" aria-hidden="true">ƒ</span><input id="ffmpeg" name="ffmpeg" type="text" placeholder="Automatycznie z PATH" autocomplete="off"></span>
+            <span class="field-hint" id="ffmpeg-hint">Folder z ffmpeg i ffprobe albo ścieżka do ffmpeg.</span>
+          </label>
+
+          <fieldset class="toggles">
+            <legend>Dodatkowe opcje</legend>
+            <label class="toggle-row">
+              <span class="toggle-copy"><strong>Nadpisuj istniejące pliki</strong><small>Włącz, aby zastąpić wcześniej wyodrębnione audio.</small></span>
+              <input type="checkbox" name="overwrite" id="overwrite"><span class="switch" aria-hidden="true"></span>
+            </label>
+          </fieldset>
+
+          <div class="form-actions">
+            <button class="run-button" id="run-button" type="submit"><span class="play-icon" aria-hidden="true">▶</span><span>Rozpocznij ekstrakcję</span><span class="button-arrow" aria-hidden="true">↗</span></button>
+            <p class="form-note">Uruchamiane lokalnie na tym komputerze.</p>
+          </div>
+        </form>
+      </section>
+
+      <section class="activity" aria-labelledby="activity-title">
+        <div class="section-heading activity-heading">
+          <span class="section-number">02</span>
+          <div><p class="eyebrow">MONITOR ZADANIA</p><h2 id="activity-title">Aktywność</h2></div>
+          <span class="status-badge" id="status-badge" data-status="idle"><i></i><span>GOTOWY</span></span>
+        </div>
+        <div class="activity-meta"><span id="activity-message">Oczekiwanie na uruchomienie</span><button class="stop-button" id="stop-button" type="button" disabled>■ ZATRZYMAJ</button></div>
+        <pre class="log" id="log" aria-live="polite" aria-label="Wyjście skryptu"><span class="log-placeholder">Tutaj pojawi się postęp przetwarzania.<br><span>Pliki, znalezione ścieżki i komunikaty skryptu.</span></span></pre>
+        <div class="activity-footer"><span><i class="footer-dot"></i> SKRYPT: wyciagnij_polskie_audio.py</span><span>UTF-8 / LIVE</span></div>
+      </section>
+    </div>
+    <footer class="page-footer"><span>EXTRACT AUDIO / LOCAL TOOL</span><span>01—02 <b>◆</b> GOTOWE DO PRACY</span></footer>
+  </main>
+</body>
+</html>

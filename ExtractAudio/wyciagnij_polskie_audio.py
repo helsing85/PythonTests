@@ -7,15 +7,15 @@ Użycie:
     python wyciagnij_polskie_audio.py                 -> wartości DEFAULT_* poniżej
     python wyciagnij_polskie_audio.py "D:\\Filmy"      -> podany folder
     python wyciagnij_polskie_audio.py "D:\\Filmy" -o "D:\\Audio"   -> zapis do innego folderu
-    python wyciagnij_polskie_audio.py "D:\\Filmy" --ffmpeg "C:\\ffmpeg\\bin"  -> własny ffmpeg
+    python wyciagnij_polskie_audio.py "D:\\Filmy" --ffmpeg "C:\\ffmpeg\\bin"  -> własny FFmpeg
 
 Edytuj DEFAULT_FOLDER, aby wskazać folder z filmami (np. r"D:\\Filmy").
 Puste DEFAULT_FOLDER otwiera okno wyboru folderu.
 DEFAULT_OUTPUT = None zapisuje audio obok filmów, a DEFAULT_FFMPEG = None
 włącza automatyczne wyszukiwanie narzędzi. Argumenty z terminala mają pierwszeństwo.
 
-Wymaga ffmpeg/ffprobe (w PATH lub obok skryptu). Jeśli ich brak, skrypt
-zaproponuje automatyczne pobranie wersji przenośnej (Windows).
+Wymaga ffmpeg/ffprobe (w PATH, obok skryptu lub podanych przez --ffmpeg).
+Skrypt nie pobiera tych narzędzi automatycznie.
 """
 import argparse
 import json
@@ -24,14 +24,11 @@ import re
 import shutil
 import subprocess
 import sys
-import urllib.request
-import zipfile
 
 DEFAULT_FOLDER = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_OUTPUT = None
+DEFAULT_OUTPUT = ""
 DEFAULT_FFMPEG = None
 DEFAULT_OVERWRITE = False
-DEFAULT_YES = False
 
 VIDEO_EXT = {
     ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".mts",
@@ -57,39 +54,17 @@ CODEC_EXT = {
 }
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(sys.argv[0]))
-FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-
-
 # ---------------------------------------------------------------- ffmpeg ---
+def is_tool_file(path):
+    return os.path.isfile(path) and (os.name == "nt" or os.access(path, os.X_OK))
+
+
 def find_tool(name):
     exe = name + (".exe" if os.name == "nt" else "")
     for cand in (os.path.join(SCRIPT_DIR, exe), os.path.join(SCRIPT_DIR, "ffmpeg", exe)):
-        if os.path.isfile(cand):
+        if is_tool_file(cand):
             return cand
     return shutil.which(name)
-
-
-def download_ffmpeg():
-    target_dir = os.path.join(SCRIPT_DIR, "ffmpeg")
-    os.makedirs(target_dir, exist_ok=True)
-    zip_path = os.path.join(target_dir, "ffmpeg.zip")
-    print("Pobieranie ffmpeg z", FFMPEG_URL, "...")
-
-    def hook(blocks, bs, total):
-        if total > 0:
-            pct = min(100, blocks * bs * 100 // total)
-            print("\r  {}%".format(pct), end="", flush=True)
-
-    urllib.request.urlretrieve(FFMPEG_URL, zip_path, hook)
-    print("\nRozpakowywanie...")
-    with zipfile.ZipFile(zip_path) as z:
-        for member in z.namelist():
-            base = os.path.basename(member)
-            if base in ("ffmpeg.exe", "ffprobe.exe"):
-                with z.open(member) as src, open(os.path.join(target_dir, base), "wb") as dst:
-                    shutil.copyfileobj(src, dst)
-    os.remove(zip_path)
-    print("ffmpeg zainstalowany w:", target_dir)
 
 
 def tools_from_user_path(path):
@@ -102,32 +77,27 @@ def tools_from_user_path(path):
     found = []
     for name in ("ffmpeg", "ffprobe"):
         cands = [os.path.join(folder, name + suffix), os.path.join(folder, "bin", name + suffix)]
-        if name == "ffmpeg" and os.path.isfile(path):
+        if name == "ffmpeg" and is_tool_file(path):
             cands.insert(0, path)
-        tool = next((c for c in cands if os.path.isfile(c)), None)
+        tool = next((c for c in cands if is_tool_file(c)), None)
         if not tool:
-            sys.exit("Nie znaleziono {} w: {}".format(name + suffix, folder))
+            sys.exit("Nie znaleziono wykonywalnego {} w: {}".format(name + suffix, folder))
         found.append(tool)
     return found[0], found[1]
 
 
-def ensure_ffmpeg(auto_yes=False, user_path=None):
+def ensure_ffmpeg(user_path=None):
     if user_path:
         return tools_from_user_path(user_path)
     ffmpeg, ffprobe = find_tool("ffmpeg"), find_tool("ffprobe")
     if ffmpeg and ffprobe:
         return ffmpeg, ffprobe
-    if os.name != "nt":
-        sys.exit("Brak ffmpeg/ffprobe. Zainstaluj je (np. 'sudo apt install ffmpeg').")
-    print("Nie znaleziono ffmpeg/ffprobe.")
-    ans = "t" if auto_yes else input("Pobrać automatycznie wersję przenośną (~100 MB)? [T/n]: ").strip().lower()
-    if ans not in ("", "t", "tak", "y", "yes"):
-        sys.exit("Przerwano. Zainstaluj ffmpeg (np. 'winget install Gyan.FFmpeg') i uruchom ponownie.")
-    download_ffmpeg()
-    ffmpeg, ffprobe = find_tool("ffmpeg"), find_tool("ffprobe")
-    if not (ffmpeg and ffprobe):
-        sys.exit("Nie udało się zainstalować ffmpeg.")
-    return ffmpeg, ffprobe
+    missing = [name for name, tool in (("ffmpeg", ffmpeg), ("ffprobe", ffprobe)) if not tool]
+    if os.name == "nt":
+        hint = "Zainstaluj FFmpeg (np. 'winget install Gyan.FFmpeg') lub wskaż jego folder przez --ffmpeg."
+    else:
+        hint = "Zainstaluj FFmpeg (np. 'sudo apt install ffmpeg') lub wskaż jego folder przez --ffmpeg."
+    sys.exit("Brak {}. {}".format(" i ".join(missing), hint))
 
 
 # --------------------------------------------------------------- helpers ---
@@ -313,9 +283,8 @@ def main():
     p.add_argument("-o", "--output", default=DEFAULT_OUTPUT,
                    help="folder docelowy (domyślnie DEFAULT_OUTPUT lub obok pliku wideo; struktura podfolderów zachowana)")
     p.add_argument("-f", "--overwrite", action="store_true", default=DEFAULT_OVERWRITE, help="nadpisuj istniejące pliki")
-    p.add_argument("-y", "--yes", action="store_true", default=DEFAULT_YES, help="bez pytań (np. o pobranie ffmpeg)")
     p.add_argument("--ffmpeg", metavar="ŚCIEŻKA", default=DEFAULT_FFMPEG,
-                   help="ścieżka do ffmpeg.exe lub folderu z ffmpeg i ffprobe (np. C:\\ffmpeg\\bin)")
+                   help="ścieżka do ffmpeg lub folderu zawierającego ffmpeg i ffprobe")
     args = p.parse_args()
 
     folder = args.folder or pick_folder()
@@ -324,7 +293,7 @@ def main():
     folder = os.path.abspath(folder)
     out_root = os.path.abspath(args.output) if args.output else None
 
-    ffmpeg, ffprobe = ensure_ffmpeg(args.yes, args.ffmpeg)
+    ffmpeg, ffprobe = ensure_ffmpeg(args.ffmpeg)
     print("Folder: {}\n".format(folder))
 
     videos = []
