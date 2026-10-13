@@ -204,6 +204,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
 def run_bundled_extractor():
     if not SCRIPT_PATH.is_file():
         raise SystemExit("Nie znaleziono skryptu: {}".format(SCRIPT_PATH))
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True, write_through=True)
+        except (AttributeError, ValueError):
+            pass
     sys.argv = [str(SCRIPT_PATH)] + sys.argv[2:]
     runpy.run_path(str(SCRIPT_PATH), run_name="__main__")
 
